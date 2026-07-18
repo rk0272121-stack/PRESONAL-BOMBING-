@@ -1,1 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Manager</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Segoe UI',sans-serif;background:#0a0a0a;color:#00ff88;padding:20px}
+        .container{max-width:1200px;margin:0 auto}
+        .header{text-align:center;padding:30px 0;border-bottom:2px solid #00ff8833;margin-bottom:30px}
+        .header h1{font-size:2.5em;color:#00ff88;text-shadow:0 0 30px #00ff8833}
+        .header p{color:#888}
+        .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;margin-bottom:30px}
+        .stat-card{background:#1a1a1a;padding:20px;border-radius:12px;border:1px solid #00ff8833;text-align:center}
+        .stat-card .number{font-size:2em;font-weight:bold;color:#00ff88}
+        .stat-card .label{color:#888;margin-top:5px}
+        .add-section{background:#1a1a1a;padding:25px;border-radius:12px;border:1px solid #00ff8833;margin-bottom:30px}
+        .add-section h2{color:#00ff88;margin-bottom:15px}
+        .form-row{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+        .form-group{display:flex;flex-direction:column}
+        .form-group label{color:#888;font-size:0.9em;margin-bottom:5px}
+        .form-group input,.form-group textarea,.form-group select{background:#0a0a0a;border:1px solid #333;color:#00ff88;padding:10px;border-radius:6px;font-size:14px}
+        .form-group input:focus,.form-group textarea:focus{outline:none;border-color:#00ff88}
+        .btn{background:#00ff88;color:#0a0a0a;border:none;padding:12px 25px;border-radius:6px;font-weight:bold;cursor:pointer;font-size:14px}
+        .btn:hover{opacity:0.8}
+        .btn-danger{background:#ff4444;color:#fff}
+        .btn-danger:hover{opacity:0.8}
+        .btn-sm{padding:6px 12px;font-size:12px}
+        .api-list{background:#1a1a1a;border-radius:12px;border:1px solid #00ff8833;overflow:hidden}
+        .api-item{display:grid;grid-template-columns:auto 1fr auto auto auto;align-items:center;padding:12px 20px;border-bottom:1px solid #222;gap:15px}
+        .api-item:last-child{border-bottom:none}
+        .api-item .name{font-weight:bold;color:#fff}
+        .api-item .url{color:#888;font-size:0.85em;word-break:break-all}
+        .api-item .status{font-size:0.8em;padding:3px 10px;border-radius:20px}
+        .api-item .status.active{background:#00ff8833;color:#00ff88}
+        .api-item .status.inactive{background:#ff444433;color:#ff4444}
+        .actions{display:flex;gap:8px}
+        .full{grid-column:1/-1}
+        .mt-10{margin-top:10px}
+        .flex{display:flex;gap:10px;flex-wrap:wrap}
+        @media(max-width:768px){.form-row{grid-template-columns:1fr}.api-item{grid-template-columns:1fr;gap:8px}}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>⚡ API Manager</h1>
+        <p>Manage your bombing APIs - Add, Delete, Toggle, Export, Import</p>
+    </div>
 
+    <div class="stats" id="stats">
+        <div class="stat-card"><div class="number" id="total">0</div><div class="label">Total APIs</div></div>
+        <div class="stat-card"><div class="number green" id="active">0</div><div class="label">Active</div></div>
+        <div class="stat-card"><div class="number red" id="inactive">0</div><div class="label">Inactive</div></div>
+        <div class="stat-card"><div class="number yellow" id="speed">0</div><div class="label">Req/Sec</div></div>
+    </div>
+
+    <div class="add-section">
+        <h2>➕ Add New API</h2>
+        <div class="form-row">
+            <div class="form-group"><label>API Name</label><input id="apiName" placeholder="e.g., Flipkart SMS"></div>
+            <div class="form-group"><label>Method</label>
+                <select id="apiMethod"><option value="POST">POST</option><option value="GET">GET</option><option value="PUT">PUT</option></select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>URL (use {phone} for phone number)</label><input id="apiUrl" placeholder="https://example.com/api/{phone}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Headers (JSON)</label><textarea id="apiHeaders" rows="2">{"Content-Type": "application/json"}</textarea></div>
+            <div class="form-group"><label>Data/Body (use {phone})</label><textarea id="apiData" rows="2">{"mobile":"{phone}"}</textarea></div>
+        </div>
+        <div class="flex mt-10">
+            <button class="btn" onclick="addAPI()">➕ Add API</button>
+            <button class="btn" onclick="exportAPI()">📥 Export All</button>
+            <button class="btn" onclick="document.getElementById('importFile').click()">📤 Import</button>
+            <input type="file" id="importFile" style="display:none" accept=".json" onchange="importAPI(event)">
+            <button class="btn" onclick="refreshStats()">🔄 Refresh</button>
+        </div>
+    </div>
+
+    <div class="api-list" id="apiList"></div>
+</div>
+
+<script>
+let apis = [];
+
+async function loadAPIs() {
+    try {
+        const res = await fetch('/api/download');
+        const data = await res.json();
+        apis = data.apis || [];
+        renderAPIs();
+        updateStats();
+    } catch(e) { console.error(e); }
+}
+
+function renderAPIs() {
+    const container = document.getElementById('apiList');
+    if (!apis || apis.length === 0) {
+        container.innerHTML = '<div style="padding:20px;text-align:center;color:#888;">No APIs added yet. Add one above!</div>';
+        return;
+    }
+    container.innerHTML = apis.map((api, i) => `
+        <div class="api-item">
+            <span class="status ${api.active ? 'active' : 'inactive'}">${api.active ? '🟢' : '🔴'}</span>
+            <div><div class="name">${api.name}</div><div class="url">${api.url || 'No URL'}</div></div>
+            <span style="color:#888;font-size:0.8em">${api.method || 'POST'}</span>
+            <div class="actions">
+                <button class="btn btn-sm" onclick="toggleAPI(${i})">${api.active ? '⏸' : '▶️'}</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteAPI(${i})">🗑</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateStats() {
+    const total = apis.length;
+    const active = apis.filter(a => a.active).length;
+    const inactive = total - active;
+    const speed = active * 10;
+    document.getElementById('total').textContent = total;
+    document.getElementById('active').textContent = active;
+    document.getElementById('inactive').textContent = inactive;
+    document.getElementById('speed').textContent = speed;
+}
+
+async function addAPI() {
+    const name = document.getElementById('apiName').value.trim();
+    const url = document.getElementById('apiUrl').value.trim();
+    const method = document.getElementById('apiMethod').value;
+    const headers = document.getElementById('apiHeaders').value.trim();
+    const data = document.getElementById('apiData').value.trim();
+
+    if (!name || !url) { alert('Name and URL required!'); return; }
+
+    try {
+        const res = await fetch('/api/add', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name, url, method,
+                headers: headers ? JSON.parse(headers) : {},
+                data: data || null
+            })
+        });
+        const result = await res.json();
+        if (result.success) {
+            document.getElementById('apiName').value = '';
+            document.getElementById('apiUrl').value = '';
+            loadAPIs();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function deleteAPI(index) {
+    if (!confirm('Delete this API?')) return;
+    try {
+        const res = await fetch(`/api/delete/${index}`, { method: 'DELETE' });
+        const result = await res.json();
+        if (result.success) loadAPIs();
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function toggleAPI(index) {
+    try {
+        const res = await fetch(`/api/toggle/${index}`, { method: 'POST' });
+        const result = await res.json();
+        if (result.success) loadAPIs();
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+function exportAPI() {
+    window.open('/api/export', '_blank');
+}
+
+async function importAPI(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const res = await fetch('/api/import', { method: 'POST', body: formData });
+        const result = await res.json();
+        if (result.success) { loadAPIs(); alert('Imported ' + result.total + ' APIs!'); }
+        else { alert('Error: ' + result.error); }
+    } catch(e) { alert('Error: ' + e.message); }
+    event.target.value = '';
+}
+
+async function refreshStats() { loadAPIs(); }
+
+loadAPIs();
+setInterval(loadAPIs, 30000);
+</script>
+</body>
+</html>
